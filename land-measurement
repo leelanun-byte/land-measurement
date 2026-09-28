@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ระบบวัดพื้นที่และปรับสเกลโฉนดที่ดิน (พร้อมปุ่มลบหมุด)</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --bg: #0f172a;
+            --panel-bg: #ffffff;
+            --text: #0f172a;
+            --border: #e2e8f0;
+            --accent: #16a34a;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: system-ui, -apple-system, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        #main-content {
+            width: 100%;
+            background: #1e293b;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 10px;
+            position: relative;
+        }
+
+        #canvas-container {
+            position: relative;
+            background: #0f172a;
+            border-radius: 8px;
+            overflow: hidden;
+            touch-action: none;
+            width: 100%;
+            height: 60vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        canvas {
+            display: block;
+            cursor: crosshair;
+            background-color: #334155;
+        }
+
+        .zoom-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            gap: 6px;
+            z-index: 10;
+        }
+
+        .zoom-btn {
+            background: rgba(15, 23, 42, 0.85);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            font-size: 1.2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            backdrop-filter: blur(4px);
+        }
+
+        #sidebar {
+            width: 100%;
+            background: var(--panel-bg);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .section-title {
+            font-size: 0.85rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: #64748b;
+            margin-bottom: 8px;
+        }
+
+        .card {
+            background: #f8fafc;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        button, .file-upload-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            flex: 1;
+        }
+
+        button.success { background: var(--accent); }
+        button.danger { background: #ef4444; }
+        button.warning { background: #f59e0b; }
+        button.secondary { background: #64748b; }
+
+        button:disabled {
+            background: #cbd5e1;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        input[type="file"] { display: none; }
+
+        input[type="number"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 0.95rem;
+            text-align: center;
+        }
+
+        .input-row {
+            display: flex;
+            gap: 6px;
+        }
+
+        .result-box {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-radius: 8px;
+            padding: 14px;
+            color: #166534;
+        }
+
+        .result-val {
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin-top: 4px;
+        }
+
+        .status-badge {
+            display: block;
+            text-align: center;
+            padding: 6px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+        .status-badge.open { background: #fef3c7; color: #92400e; }
+        .status-badge.closed { background: #dcfce7; color: #166534; }
+
+        @media (min-width: 768px) {
+            body { flex-direction: row; height: 100vh; overflow: hidden; }
+            #sidebar { width: 380px; height: 100vh; overflow-y: auto; border-right: 1px solid var(--border); }
+            #main-content { flex: 1; height: 100vh; padding: 20px; }
+            #canvas-container { height: 100%; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="main-content">
+        <div id="canvas-container">
+            <canvas id="canvas"></canvas>
+            <div class="zoom-controls">
+                <div class="zoom-btn" id="btnZoomIn">🔍+</div>
+                <div class="zoom-btn" id="btnZoomOut">🔍-</div>
+                <div class="zoom-btn" id="btnResetView">🎯</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="sidebar">
+        <h2>สเกลและวัดพื้นที่จากภาพ</h2>
+
+        <div class="card">
+            <div class="section-title">1. อัปโหลดรูปภาพโฉนด</div>
+            <div class="btn-group" style="flex-direction: column;">
+                <label class="file-upload-btn">
+                    📁 เลือกไฟล์ภาพโฉนด/ที่ดิน
+                    <input type="file" id="imageInput" accept="image/*">
+                </label>
+                <button id="btnDemoImage" class="secondary">🎨 ภาพโฉนดตัวอย่าง</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="section-title">2. ปักหมุด / แก้ไข / ลบหมุด</div>
+            
+            <div class="btn-group" style="margin-bottom: 8px;">
+                <button id="btnUndo" class="secondary" disabled>↩️ Undo</button>
+                <button id="btnRedo" class="secondary" disabled>↪️ Redo</button>
+            </div>
+
+            <div class="btn-group" style="margin-bottom: 8px;">
+                <button id="btnDeleteSelected" class="warning" disabled>📍 ลบหมุดที่เลือก</button>
+                <button id="btnClearLand" class="danger">🗑️ ล้างทั้งหมด</button>
+            </div>
+
+            <button id="btnCloseLoop" class="success" style="width: 100%;" disabled>🔒 ปิดวงรอบ</button>
+
+            <div id="loopStatus" class="status-badge open">สถานะ: กรุณาเลือกภาพโฉนดเข้ามาก่อน</div>
+            <div style="font-size: 0.75rem; color: #64748b; margin-top: 6px; text-align: center;">
+                💡 นิ้วเดียว: แตะเลือก/ลากหมุด | 2 นิ้ว: ย้ายและซูมภาพ
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="section-title">3. ใส่พื้นที่จริงเพื่อปรับขนาด</div>
+            <label style="font-size: 0.8rem;">ระบุพื้นที่จริงของวงรอบ:</label>
+            <div class="input-row" style="margin-top: 6px;">
+                <input type="number" id="inputRai" placeholder="ไร่" min="0" value="1">
+                <input type="number" id="inputNgan" placeholder="งาน" min="0" max="3" value="0">
+                <input type="number" id="inputSqWa" placeholder="ตร.ว." min="0" max="99.9" value="0">
+            </div>
+            <button id="btnApplyScale" style="width: 100%; margin-top: 10px;">⚖️ กดปรับขนาดสเกลภาพ</button>
+        </div>
+
+        <div class="result-box">
+            <div class="section-title" style="color: #166534;">ผลลัพธ์คำนวณพื้นที่จริง</div>
+            <div id="areaThai" class="result-val">- ไร่ - งาน - ตร.ว.</div>
+            <div id="areaMetric" style="font-size: 0.85rem; margin-top: 4px; font-weight: 600;">0.00 ตร.ม.</div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvas-container');
+
+        const imageInput = document.getElementById('imageInput');
+        const btnDemoImage = document.getElementById('btnDemoImage');
+        const btnCloseLoop = document.getElementById('btnCloseLoop');
+        const btnClearLand = document.getElementById('btnClearLand');
+        const btnDeleteSelected = document.getElementById('btnDeleteSelected');
+        const btnApplyScale = document.getElementById('btnApplyScale');
+        const btnUndo = document.getElementById('btnUndo');
+        const btnRedo = document.getElementById('btnRedo');
+        const loopStatus = document.getElementById('loopStatus');
+
+        // Pan & Zoom State Variables
+        let scale = 1;
+        let panX = 0;
+        let panY = 0;
+        let isDraggingView = false;
+        let startPanX = 0, startPanY = 0;
+
+        // Touch Tracking for 2-Finger Pan & Pinch Zoom
+        let touchStartDist = 0;
+        let touchStartCenter = { x: 0, y: 0 };
+        let touchStartPan = { x: 0, y: 0 };
+        let isMultiTouch = false;
+
+        // Land State Variables
+        let img = new Image();
+        let landPoints = []; // [{x, y}]
+        let isLoopClosed = false;
+        let metersPerPixel = null;
+        let activePointIndex = -1; // หมุดที่กำลังลาก
+        let selectedPointIndex = -1; // หมุดที่เลือกเพื่อเตรียมลบ
+
+        // --- Undo / Redo History Management ---
+        let undoStack = [];
+        let redoStack = [];
+
+        function saveState() {
+            const state = {
+                landPoints: JSON.parse(JSON.stringify(landPoints)),
+                isLoopClosed: isLoopClosed,
+                selectedPointIndex: selectedPointIndex
+            };
+            undoStack.push(state);
+            redoStack = [];
+            updateUndoRedoUI();
+        }
+
+        function updateUndoRedoUI() {
+            btnUndo.disabled = undoStack.length === 0;
+            btnRedo.disabled = redoStack.length === 0;
+            btnDeleteSelected.disabled = selectedPointIndex === -1;
+        }
+
+        btnUndo.addEventListener('click', () => {
+            if (undoStack.length === 0) return;
+            redoStack.push({
+                landPoints: JSON.parse(JSON.stringify(landPoints)),
+                isLoopClosed: isLoopClosed,
+                selectedPointIndex: selectedPointIndex
+            });
+            const previousState = undoStack.pop();
+            landPoints = previousState.landPoints;
+            isLoopClosed = previousState.isLoopClosed;
+            selectedPointIndex = previousState.selectedPointIndex;
+
+            if (metersPerPixel) calculateArea();
+            updateLoopStatusUI();
+            updateUndoRedoUI();
+            render();
+        });
+
+        btnRedo.addEventListener('click', () => {
+            if (redoStack.length === 0) return;
+            undoStack.push({
+                landPoints: JSON.parse(JSON.stringify(landPoints)),
+                isLoopClosed: isLoopClosed,
+                selectedPointIndex: selectedPointIndex
+            });
+            const nextState = redoStack.pop();
+            landPoints = nextState.landPoints;
+            isLoopClosed = nextState.isLoopClosed;
+            selectedPointIndex = nextState.selectedPointIndex;
+
+            if (metersPerPixel) calculateArea();
+            updateLoopStatusUI();
+            updateUndoRedoUI();
+            render();
+        });
+
+        // --- Delete Selected Pin ---
+        btnDeleteSelected.addEventListener('click', deleteSelectedPin);
+
+        function deleteSelectedPin() {
+            if (selectedPointIndex !== -1 && selectedPointIndex < landPoints.length) {
+                saveState();
+                landPoints.splice(selectedPointIndex, 1);
+                selectedPointIndex = -1;
+
+                if (landPoints.length < 3) {
+                    isLoopClosed = false;
+                }
+
+                if (metersPerPixel) calculateArea();
+                updateLoopStatusUI();
+                updateUndoRedoUI();
+                render();
+            }
+        }
+
+        function initCanvas() {
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            render();
+        }
+
+        // Image Load Handler
+        imageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                img = new Image();
+                img.onload = () => resetViewAndState();
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Demo Image Handler
+        btnDemoImage.addEventListener('click', () => {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = 800;
+            tempCanvas.height = 600;
+            const tCtx = tempCanvas.getContext('2d');
+
+            tCtx.fillStyle = '#fef3c7';
+            tCtx.fillRect(0, 0, 800, 600);
+            tCtx.strokeStyle = '#92400e';
+            tCtx.lineWidth = 6;
+            tCtx.strokeRect(10, 10, 780, 580);
+
+            tCtx.fillStyle = '#78350f';
+            tCtx.font = 'bold 28px system-ui';
+            tCtx.textAlign = 'center';
+            tCtx.fillText('รูปแผนที่โฉนดที่ดิน (ตัวอย่าง)', 400, 60);
+
+            tCtx.beginPath();
+            tCtx.moveTo(150, 150);
+            tCtx.lineTo(650, 120);
+            tCtx.lineTo(600, 500);
+            tCtx.lineTo(200, 480);
+            tCtx.closePath();
+            tCtx.strokeStyle = '#2563eb';
+            tCtx.lineWidth = 4;
+            tCtx.stroke();
+
+            img = new Image();
+            img.onload = () => resetViewAndState();
+            img.src = tempCanvas.toDataURL();
+        });
+
+        function resetViewAndState() {
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+
+            const scaleW = canvas.width / img.width;
+            const scaleH = canvas.height / img.height;
+            scale = Math.min(scaleW, scaleH, 1) * 0.9;
+
+            panX = (canvas.width - img.width * scale) / 2;
+            panY = (canvas.height - img.height * scale) / 2;
+
+            landPoints = [];
+            isLoopClosed = false;
+            metersPerPixel = null;
+            selectedPointIndex = -1;
+            undoStack = [];
+            redoStack = [];
+            updateUndoRedoUI();
+            updateLoopStatusUI();
+            render();
+        }
+
+        // Coordinate Conversion
+        function screenToImageCoords(screenX, screenY) {
+            return {
+                x: (screenX - panX) / scale,
+                y: (screenY - panY) / scale
+            };
+        }
+
+        function imageToScreenCoords(imgX, imgY) {
+            return {
+                x: imgX * scale + panX,
+                y: imgY * scale + panY
+            };
+        }
+
+        function getPointerPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return {
+                x: clientX - rect.left,
+                y: clientY - rect.top
+            };
+        }
+
+        function getTouchDistance(t1, t2) {
+            return Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+        }
+
+        function getTouchCenter(t1, t2) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: ((t1.clientX + t2.clientX) / 2) - rect.left,
+                y: ((t1.clientY + t2.clientY) / 2) - rect.top
+            };
+        }
+
+        // Mouse Events
+        canvas.addEventListener('mousedown', (e) => {
+            if (!img.src) return;
+            const pos = getPointerPos(e);
+
+            const clickedIdx = landPoints.findIndex(p => {
+                const screenP = imageToScreenCoords(p.x, p.y);
+                return Math.hypot(screenP.x - pos.x, screenP.y - pos.y) <= 18;
+            });
+
+            if (clickedIdx !== -1) {
+                selectedPointIndex = clickedIdx;
+                activePointIndex = clickedIdx;
+                saveState();
+                updateUndoRedoUI();
+                render();
+                return;
+            }
+
+            // Clicked background -> Deselect
+            selectedPointIndex = -1;
+            updateUndoRedoUI();
+
+            if (landPoints.length >= 3 && !isLoopClosed) {
+                const firstP = imageToScreenCoords(landPoints[0].x, landPoints[0].y);
+                if (Math.hypot(firstP.x - pos.x, firstP.y - pos.y) <= 20) {
+                    closeLoop();
+                    return;
+                }
+            }
+
+            if (!isLoopClosed) {
+                saveState();
+                landPoints.push(screenToImageCoords(pos.x, pos.y));
+                updateLoopStatusUI();
+                render();
+            } else {
+                isDraggingView = true;
+                startPanX = pos.x - panX;
+                startPanY = pos.y - panY;
+            }
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            const pos = getPointerPos(e);
+            if (activePointIndex !== -1) {
+                landPoints[activePointIndex] = screenToImageCoords(pos.x, pos.y);
+                if (metersPerPixel) calculateArea();
+                render();
+            } else if (isDraggingView) {
+                panX = pos.x - startPanX;
+                panY = pos.y - startPanY;
+                render();
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            activePointIndex = -1;
+            isDraggingView = false;
+        });
+
+        // Touch Events
+        canvas.addEventListener('touchstart', (e) => {
+            if (!img.src) return;
+
+            if (e.touches.length === 2) {
+                isMultiTouch = true;
+                activePointIndex = -1;
+                touchStartDist = getTouchDistance(e.touches[0], e.touches[1]);
+                touchStartCenter = getTouchCenter(e.touches[0], e.touches[1]);
+                touchStartPan = { x: panX, y: panY };
+            } else if (e.touches.length === 1 && !isMultiTouch) {
+                const pos = getPointerPos(e);
+
+                const clickedIdx = landPoints.findIndex(p => {
+                    const screenP = imageToScreenCoords(p.x, p.y);
+                    return Math.hypot(screenP.x - pos.x, screenP.y - pos.y) <= 22;
+                });
+
+                if (clickedIdx !== -1) {
+                    selectedPointIndex = clickedIdx;
+                    activePointIndex = clickedIdx;
+                    saveState();
+                    updateUndoRedoUI();
+                    render();
+                    return;
+                }
+
+                selectedPointIndex = -1;
+                updateUndoRedoUI();
+
+                if (landPoints.length >= 3 && !isLoopClosed) {
+                    const firstP = imageToScreenCoords(landPoints[0].x, landPoints[0].y);
+                    if (Math.hypot(firstP.x - pos.x, firstP.y - pos.y) <= 25) {
+                        closeLoop();
+                        return;
+                    }
+                }
+
+                if (!isLoopClosed) {
+                    saveState();
+                    landPoints.push(screenToImageCoords(pos.x, pos.y));
+                    updateLoopStatusUI();
+                    render();
+                }
+            }
+        }, { passive: false });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (!img.src) return;
+
+            if (e.touches.length === 2) {
+                e.preventDefault();
+                const currentDist = getTouchDistance(e.touches[0], e.touches[1]);
+                const currentCenter = getTouchCenter(e.touches[0], e.touches[1]);
+
+                if (touchStartDist > 0) {
+                    const zoomFactor = currentDist / touchStartDist;
+                    const newScale = Math.min(Math.max(scale * zoomFactor, 0.1), 10);
+
+                    panX = currentCenter.x - (touchStartCenter.x - touchStartPan.x) * (newScale / scale) + (currentCenter.x - touchStartCenter.x);
+                    panY = currentCenter.y - (touchStartCenter.y - touchStartPan.y) * (newScale / scale) + (currentCenter.y - touchStartCenter.y);
+
+                    scale = newScale;
+                    touchStartDist = currentDist;
+                    touchStartCenter = currentCenter;
+                    touchStartPan = { x: panX, y: panY };
+                    render();
+                }
+            } else if (e.touches.length === 1 && activePointIndex !== -1) {
+                e.preventDefault();
+                const pos = getPointerPos(e);
+                landPoints[activePointIndex] = screenToImageCoords(pos.x, pos.y);
+                if (metersPerPixel) calculateArea();
+                render();
+            }
+        }, { passive: false });
+
+        window.addEventListener('touchend', (e) => {
+            if (e.touches.length < 2) isMultiTouch = false;
+            if (e.touches.length === 0) activePointIndex = -1;
+        });
+
+        // Wheel Zoom
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const pos = getPointerPos(e);
+            const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+            applyZoom(zoomFactor, pos.x, pos.y);
+        }, { passive: false });
+
+        document.getElementById('btnZoomIn').addEventListener('click', () => applyZoom(1.2, canvas.width/2, canvas.height/2));
+        document.getElementById('btnZoomOut').addEventListener('click', () => applyZoom(0.8, canvas.width/2, canvas.height/2));
+        document.getElementById('btnResetView').addEventListener('click', () => {
+            if (img.src) resetViewAndState();
+        });
+
+        function applyZoom(factor, centerX, centerY) {
+            const newScale = Math.min(Math.max(scale * factor, 0.1), 10);
+            panX = centerX - (centerX - panX) * (newScale / scale);
+            panY = centerY - (centerY - panY) * (newScale / scale);
+            scale = newScale;
+            render();
+        }
+
+        // Closed Loop Controls
+        btnCloseLoop.addEventListener('click', closeLoop);
+
+        function closeLoop() {
+            if (landPoints.length >= 3) {
+                saveState();
+                isLoopClosed = true;
+                updateLoopStatusUI();
+                render();
+            }
+        }
+
+        btnClearLand.addEventListener('click', () => {
+            if (landPoints.length > 0) {
+                saveState();
+                landPoints = [];
+                isLoopClosed = false;
+                metersPerPixel = null;
+                selectedPointIndex = -1;
+                updateUndoRedoUI();
+                updateLoopStatusUI();
+                render();
+            }
+        });
+
+        function updateLoopStatusUI() {
+            if (!img.src) {
+                loopStatus.innerText = 'สถานะ: กรุณาเลือกภาพโฉนดเข้ามาก่อน';
+                loopStatus.className = 'status-badge open';
+                btnCloseLoop.disabled = true;
+            } else if (isLoopClosed) {
+                loopStatus.innerText = 'สถานะ: วงรอบปิดแล้ว 🔒 (ลากปรับตำแหน่งหมุดได้)';
+                loopStatus.className = 'status-badge closed';
+                btnCloseLoop.disabled = true;
+            } else {
+                loopStatus.innerText = `สถานะ: ปักหมุดแล้ว ${landPoints.length} จุด (แตะหมุด P1 เพื่อปิดวงรอบ)`;
+                loopStatus.className = 'status-badge open';
+                btnCloseLoop.disabled = landPoints.length < 3;
+            }
+        }
+
+        // Scale & Area Calculation
+        btnApplyScale.addEventListener('click', () => {
+            if (!isLoopClosed) {
+                alert('กรุณาปักหมุดแล้วปิดวงรอบให้เรียบร้อยก่อนปรับขนาด');
+                return;
+            }
+
+            const rai = parseFloat(document.getElementById('inputRai').value) || 0;
+            const ngan = parseFloat(document.getElementById('inputNgan').value) || 0;
+            const sqWa = parseFloat(document.getElementById('inputSqWa').value) || 0;
+            const targetSqM = (rai * 1600) + (ngan * 400) + (sqWa * 4);
+
+            if (targetSqM <= 0) {
+                alert('กรุณาระบุพื้นที่จริงให้มากกว่า 0');
+                return;
+            }
+
+            let areaPx = 0;
+            for (let i = 0; i < landPoints.length; i++) {
+                let j = (i + 1) % landPoints.length;
+                areaPx += landPoints[i].x * landPoints[j].y;
+                areaPx -= landPoints[j].x * landPoints[i].y;
+            }
+            areaPx = Math.abs(areaPx) / 2;
+
+            metersPerPixel = Math.sqrt(targetSqM / areaPx);
+            calculateArea();
+            render();
+        });
+
+        function calculateArea() {
+            const rai = parseFloat(document.getElementById('inputRai').value) || 0;
+            const ngan = parseFloat(document.getElementById('inputNgan').value) || 0;
+            const sqWa = parseFloat(document.getElementById('inputSqWa').value) || 0;
+            const totalSqM = (rai * 1600) + (ngan * 400) + (sqWa * 4);
+
+            document.getElementById('areaThai').innerText = `${rai} ไร่ ${ngan} งาน ${sqWa} ตร.ว.`;
+            document.getElementById('areaMetric').innerText = `${totalSqM.toLocaleString()} ตร.ม.`;
+        }
+
+        // Render Canvas Scene
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (!img.src) {
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '14px system-ui';
+                ctx.textAlign = 'center';
+                ctx.fillText('กรุณาเลือกไฟล์ภาพโฉนดเพื่อเริ่มใช้งาน', canvas.width / 2, canvas.height / 2);
+                return;
+            }
+
+            ctx.drawImage(img, panX, panY, img.width * scale, img.height * scale);
+
+            if (landPoints.length === 0) return;
+
+            const screenPoints = landPoints.map(p => imageToScreenCoords(p.x, p.y));
+
+            ctx.strokeStyle = '#2563eb';
+            ctx.fillStyle = 'rgba(37, 99, 235, 0.25)';
+            ctx.lineWidth = 3;
+
+            ctx.beginPath();
+            ctx.moveTo(screenPoints[0].x, screenPoints[0].y);
+            for (let i = 1; i < screenPoints.length; i++) {
+                ctx.lineTo(screenPoints[i].x, screenPoints[i].y);
+            }
+
+            if (isLoopClosed) {
+                ctx.closePath();
+                ctx.fill();
+            }
+            ctx.stroke();
+
+            for (let i = 0; i < screenPoints.length; i++) {
+                const nextIdx = (i + 1) % screenPoints.length;
+                if (!isLoopClosed && nextIdx === 0) continue;
+
+                const p1 = screenPoints[i];
+                const p2 = screenPoints[nextIdx];
+
+                const midX = (p1.x + p2.x) / 2;
+                const midY = (p1.y + p2.y) / 2;
+
+                let distLabel = `ด้านที่ ${i + 1}`;
+                if (metersPerPixel) {
+                    const imgP1 = landPoints[i];
+                    const imgP2 = landPoints[nextIdx];
+                    const pxDist = Math.hypot(imgP2.x - imgP1.x, imgP2.y - imgP1.y);
+                    const meterDist = (pxDist * metersPerPixel).toFixed(2);
+                    distLabel = `${meterDist} ม.`;
+                }
+
+                ctx.font = 'bold 12px system-ui';
+                const textWidth = ctx.measureText(distLabel).width;
+                ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+                ctx.fillRect(midX - textWidth / 2 - 4, midY - 10, textWidth + 8, 20);
+
+                ctx.fillStyle = '#38bdf8';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(distLabel, midX, midY);
+            }
+
+            screenPoints.forEach((p, i) => {
+                const isSelected = (i === selectedPointIndex);
+
+                if (isSelected) {
+                    // Highlight selected pin with an outer orange ring
+                    ctx.strokeStyle = '#f97316';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 14, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    ctx.fillStyle = '#f97316';
+                } else {
+                    ctx.fillStyle = (i === 0 && !isLoopClosed) ? '#ef4444' : '#2563eb';
+                }
+
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                ctx.font = 'bold 12px system-ui';
+                ctx.fillStyle = '#ffffff';
+                ctx.shadowColor = '#000000';
+                ctx.shadowBlur = 4;
+                ctx.fillText(`P${i + 1}`, p.x + 10, p.y - 10);
+                ctx.shadowBlur = 0;
+            });
+        }
+
+        window.addEventListener('resize', initCanvas);
+        initCanvas();
+    </script>
+</body>
+</html>
